@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-type hand struct {
-	cards []card
+type Hand struct {
+	cards []Card
 	rank  int
 }
 
-type card struct {
+type Card struct {
 	value int
 	suit  string
 }
@@ -39,13 +39,13 @@ func main() {
 }
 
 // Parse a line of input text to return the hands of the two players
-func parseHands(line string) (hand, hand, error) {
+func parseHands(line string) (Hand, Hand, error) {
 	// Split the line on spaces into two character card strings
 	cardStrings := strings.Split(line, " ")
 
 	// Convert the character pairs to card objects
-	handOne := hand{cards: []card{}}
-	handTwo := hand{cards: []card{}}
+	handOne := Hand{cards: []Card{}}
+	handTwo := Hand{cards: []Card{}}
 
 	for i, pair := range cardStrings {
 		// Split the 2 character long card string into two characters
@@ -55,7 +55,7 @@ func parseHands(line string) (hand, hand, error) {
 		value, err := charToValue(characters[0])
 		// Errors shouldn't occur on the input file, but handle them just in case
 		if err != nil {
-			return hand{}, hand{}, err
+			return Hand{}, Hand{}, err
 		}
 
 		// Use the second character (suit) as is
@@ -63,9 +63,9 @@ func parseHands(line string) (hand, hand, error) {
 
 		// The first five cards go into player one's hand, the next five into player two's
 		if i < 5 {
-			handOne.cards = append(handOne.cards, card{value, suit})
+			handOne.cards = append(handOne.cards, Card{value, suit})
 		} else {
-			handTwo.cards = append(handTwo.cards, card{value, suit})
+			handTwo.cards = append(handTwo.cards, Card{value, suit})
 		}
 	}
 
