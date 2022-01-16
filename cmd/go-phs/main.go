@@ -11,8 +11,13 @@ import (
 )
 
 type Hand struct {
-	cards []Card
-	rank  int
+	cards     []Card
+	pokerHand PokerHand
+}
+
+type PokerHand struct {
+	rank          int
+	highCardValue int
 }
 
 type Card struct {
@@ -24,6 +29,9 @@ func main() {
 	// STDIN Reader
 	scanner := bufio.NewScanner(os.Stdin)
 
+	playerOneScore := 0
+	playerTwoScore := 0
+
 	// Loop over lines from STDIN
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -34,9 +42,19 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Hand one: {%v}\n", handOne)
-		fmt.Printf("Hand two: {%v}\n", handTwo)
+		if handOne.compareHand(handTwo) == 1 {
+			playerOneScore++
+		} else if handOne.compareHand(handTwo) == -1 {
+			playerTwoScore++
+		} else {
+			// A tie shouldn't happen in this data set, but handle it's possibility anyway
+			playerOneScore++
+			playerTwoScore++
+		}
 	}
+
+	// Print the final scores of each player
+	fmt.Printf("Player 1: %d\nPlayer 2: %d\n", playerOneScore, playerTwoScore)
 }
 
 // Parse a line of input text to return the hands of the two players
@@ -70,8 +88,8 @@ func parseHands(line string) (Hand, Hand, error) {
 		}
 	}
 
-	handOne.rank = rankHand(handOne)
-	handTwo.rank = rankHand(handTwo)
+	handOne.pokerHand = rankHand(handOne)
+	handTwo.pokerHand = rankHand(handTwo)
 
 	return handOne, handTwo, nil
 }
@@ -98,47 +116,69 @@ func charToValue(char string) (int, error) {
 
 		// If digit conversion and character matching both fail, something was wrong with the input
 		default:
-			return -1, fmt.Errorf("Unable to convert {%s} to a value", char)
+			return -1, fmt.Errorf("Unable to convert %s to a value", char)
 		}
 	}
 
 	return value, nil
 }
 
-func rankHand(hand Hand) int {
-	switch {
-	case isRoyalFlush(hand.cards):
-		return 10
-	case isStraightFlush(hand.cards):
-		return 9
-	case isFourOfAKind(hand.cards):
-		return 8
-	case isFullHouse(hand.cards):
-		return 7
-	case isFlush(hand.cards):
-		return 6
-	case isStraight(hand.cards):
-		return 5
-	case isThreeOfAKind(hand.cards):
-		return 4
-	case isTwoPair(hand.cards):
-		return 3
-	case isPair(hand.cards):
-		return 2
-
-	// "High Card", the cards in the hand do not make up any poker hand
-	default:
-		return 1
+func rankHand(hand Hand) PokerHand {
+	pokerHand := PokerHand{
+		rank:          0,
+		highCardValue: 0,
 	}
+
+	// First sort the hand's cards by value
+	sort.Slice(hand.cards, func(i, j int) bool { return hand.cards[i].value < hand.cards[j].value })
+
+	// Next check the hand against each type of poker hand from highest rank to lowest to find the hand's
+	// rank and the highest card that is part of the poker hand
+	// (This isn't a switch statement so that we can get the hands high card as well)
+	if isRoyalFlush, highCardValue := checkRoyalFlush(hand.cards); isRoyalFlush {
+		pokerHand.rank = 10
+		pokerHand.highCardValue = highCardValue
+	} else if isStraightFlush, highCardValue := checkStraightFlush(hand.cards); isStraightFlush {
+		pokerHand.rank = 9
+		pokerHand.highCardValue = highCardValue
+	} else if isFourOfAKind, highCardValue := checkFourOfAKind(hand.cards); isFourOfAKind {
+		pokerHand.rank = 8
+		pokerHand.highCardValue = highCardValue
+	} else if isFullHouse, highCardValue := checkFullHouse(hand.cards); isFullHouse {
+		pokerHand.rank = 7
+		pokerHand.highCardValue = highCardValue
+	} else if isFlush, highCardValue := checkFlush(hand.cards); isFlush {
+		pokerHand.rank = 6
+		pokerHand.highCardValue = highCardValue
+	} else if isStraight, highCardValue := checkStraight(hand.cards); isStraight {
+		pokerHand.rank = 5
+		pokerHand.highCardValue = highCardValue
+	} else if isThreeOfAKind, highCardValue := checkThreeOfAKind(hand.cards); isThreeOfAKind {
+		pokerHand.rank = 4
+		pokerHand.highCardValue = highCardValue
+	} else if isTwoPair, highCardValue := checkTwoPair(hand.cards); isTwoPair {
+		pokerHand.rank = 3
+		pokerHand.highCardValue = highCardValue
+	} else if isPair, highCardValue := checkPair(hand.cards); isPair {
+		pokerHand.rank = 2
+		pokerHand.highCardValue = highCardValue
+	} else {
+		// If the cards don't fit any poker hand, the rank is 1 (High Card) and the highest card is simply the
+		// last one (as the cards are sorted by ascending value)
+		pokerHand.rank = 1
+		pokerHand.highCardValue = hand.cards[len(hand.cards)-1].value
+	}
+
+	return pokerHand
 }
 
-func isRoyalFlush(cards []Card) bool {
+func checkRoyalFlush(cards []Card) (bool, int) {
 	suit := cards[0].suit
 
 	for _, card := range cards {
 		// If any of the cards have a different suit the hand isn't a flush
 		if card.suit != suit {
-			return false
+			return false, 0
 		}
 
 		// If any of the cards aren't a Ten, Jack, Queen, King or Ace this hand isn't a royal flush
@@ -147,40 +187,38 @@ func isRoyalFlush(cards []Card) bool {
 			continue
 
 		default:
-			return false
+			return false, 0
 		}
 	}
 
 	// If the cards in the hand are all of the same suit and are the cards from Ten to Ace, then the hand is
-	// a royal flush
-	return true
+	// a royal flush. The highest card in a royal flush is always the ace (14)
+	return true, 14
 }
 
-func isStraightFlush(cards []Card) bool {
+func checkStraightFlush(cards []Card) (bool, int) {
 	suit := cards[0].suit
-
-	// First sort the cards by value to make checking for consecutiveness a single pass over the cards
-	sort.Slice(cards, func(i, j int) bool { return cards[i].value < cards[j].value })
 
 	for i, card := range cards {
 		// If any of the cards have a different suit the hand isn't a flush
 		if card.suit != suit {
-			return false
+			return false, 0
 		}
 
 		// The cards are sorted, so if any card but the last isn't followed by one of consecutive value the hand
 		// can't be a straight
 		if i != len(cards)-1 {
 			if cards[i+1].value != card.value+1 {
-				return false
+				return false, 0
 			}
 		}
 	}
 
-	return true
+	// As a straight uses all five cards, the highest value is simply the last card in the hand
+	return true, cards[len(cards)-1].value
 }
 
-func isFourOfAKind(cards []Card) bool {
+func checkFourOfAKind(cards []Card) (bool, int) {
 	// Create a map for storing card values and their number of occurrences
 	cardValueCounts := make(map[int]int)
 
@@ -193,18 +231,18 @@ func isFourOfAKind(cards []Card) bool {
 		}
 	}
 
-	// If any value occurs 4 times, the hand is a four of a kind
-	for _, count := range cardValueCounts {
+	// If any value occurs 4 times, the hand is a four of a kind, and return that value as the high card
+	for value, count := range cardValueCounts {
 		if count == 4 {
-			return true
+			return true, value
 		}
 	}
 
 	// Otherwise, it is not
-	return false
+	return false, 0
 }
 
-func isFullHouse(cards []Card) bool {
+func checkFullHouse(cards []Card) (bool, int) {
 	// Create a map for storing card values and their number of occurrences
 	cardValueCounts := make(map[int]int)
 
@@ -219,55 +257,57 @@ func isFullHouse(cards []Card) bool {
 
 	containsPair := false
 	containsThreeOfAKind := false
+	threeOfAKindValue := 0
 
 	// Check if a value occurs twice and another value occurs thrice
-	for _, count := range cardValueCounts {
+	for value, count := range cardValueCounts {
 		if count == 2 {
 			containsPair = true
 		}
 
 		if count == 3 {
 			containsThreeOfAKind = true
+			threeOfAKindValue = value
 		}
 	}
 
 	// If the hand contains both a pair and a three of a kind it is a full house, otherwise it is not
-	return containsPair && containsThreeOfAKind
+	// Poker tiebreaker rules state that a tie of a full house is broken by the higher three of a kind value
+	return containsPair && containsThreeOfAKind, threeOfAKindValue
 }
 
-func isFlush(cards []Card) bool {
+func checkFlush(cards []Card) (bool, int) {
 	suit := cards[0].suit
 
 	for _, card := range cards {
 		// If any of the cards have a different suit the hand isn't a flush
 		if card.suit != suit {
-			return false
+			return false, 0
 		}
 	}
 
-	// If all cards have the same suit, the hand is flush
-	return true
+	// If all cards have the same suit, the hand is flush. Like a straight, a flush uses all five cards so the last
+	// of the sorted cards in the hand is the high card for this hand
+	return true, cards[len(cards)-1].value
 }
 
-func isStraight(cards []Card) bool {
-	// First sort the cards by value to make checking for consecutiveness a single pass over the cards
-	sort.Slice(cards, func(i, j int) bool { return cards[i].value < cards[j].value })
-
+func checkStraight(cards []Card) (bool, int) {
 	for i, card := range cards {
 		// The cards are sorted, so if any card but the last isn't followed by one of consecutive value the hand
 		// can't be a straight
 		if i != len(cards)-1 {
 			if cards[i+1].value != card.value+1 {
-				return false
+				return false, 0
 			}
 		}
 	}
 
-	// If all the cards are consecutively valued, the hand is a straight
-	return true
+	// If all the cards are consecutively valued, the hand is a straight. The last of the cards in the hand is
+	// the high card of this hand.
+	return true, cards[len(cards)-1].value
 }
 
-func isThreeOfAKind(cards []Card) bool {
+func checkThreeOfAKind(cards []Card) (bool, int) {
 	// Create a map for storing card values and their number of occurrences
 	cardValueCounts := make(map[int]int)
 
@@ -280,18 +320,18 @@ func isThreeOfAKind(cards []Card) bool {
 		}
 	}
 
-	// Check if any card value occurs 3 times
-	for _, count := range cardValueCounts {
+	// Check if any card value occurs 3 times, if so, its value is the high card for this hand.
+	for value, count := range cardValueCounts {
 		if count == 3 {
-			return true
+			return true, value
 		}
 	}
 
 	// Otherwise the hand does not contain a three of a kind
-	return false
+	return false, 0
 }
 
-func isTwoPair(cards []Card) bool {
+func checkTwoPair(cards []Card) (bool, int) {
 	// Create a map for storing card values and their number of occurrences
 	cardValueCounts := make(map[int]int)
 
@@ -305,18 +345,22 @@ func isTwoPair(cards []Card) bool {
 	}
 
 	numPairs := 0
+	highestPair := 0
 	// Check how many values have two occurrences
-	for _, count := range cardValueCounts {
+	for value, count := range cardValueCounts {
 		if count == 2 {
 			numPairs++
+			if value > highestPair {
+				highestPair = value
+			}
 		}
 	}
 
-	// If there are two values that occur twice in the hand, it is a two pair
-	return numPairs == 2
+	// If there are two values that occur twice in the hand, it is a two pair and return the pair's cards' value
+	return numPairs == 2, highestPair
 }
 
-func isPair(cards []Card) bool {
+func checkPair(cards []Card) (bool, int) {
 	// Create a map for storing card values and their number of occurrences
 	cardValueCounts := make(map[int]int)
 
@@ -329,13 +373,43 @@ func isPair(cards []Card) bool {
 		}
 	}
 
-	// If any value occurs twice the hand contains a pair
-	for _, count := range cardValueCounts {
+	// If any value occurs twice the hand contains a pair, return the cards' value
+	for value, count := range cardValueCounts {
 		if count == 2 {
-			return true
+			return true, value
 		}
 	}
 
 	// Otherwise it does not
-	return false
+	return false, 0
+}
+
+// Compare two hands. -1 represents smaller, 0 represents equal, 1 represents greater
+func (handOne Hand) compareHand(handTwo Hand) int {
+	// First check if the rank is higher or lower
+	if handOne.pokerHand.rank > handTwo.pokerHand.rank {
+		return 1
+	} else if handOne.pokerHand.rank < handTwo.pokerHand.rank {
+		return -1
+	}
+
+	// If the rank is the same, use the poker hand's high card to break the tie
+	if handOne.pokerHand.highCardValue > handTwo.pokerHand.highCardValue {
+		return 1
+	} else if handOne.pokerHand.highCardValue < handTwo.pokerHand.highCardValue {
+		return -1
+	}
+
+	// If the rank and poker hand's high card both tie, go through each sorted hand backwards until one
+	// card has a higher value than the other
+	for i := 0; i < 5; i++ {
+		if handOne.cards[4-i].value > handTwo.cards[4-i].value {
+			return 1
+		} else if handOne.cards[4-i].value < handTwo.cards[4-i].value {
+			return -1
+		}
+	}
+
+	// If the hands are exactly the same then it is a tie that cannot be broken
+	return 0
 }
